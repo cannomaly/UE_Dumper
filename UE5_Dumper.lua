@@ -1,12 +1,32 @@
--- Load the game-specific configuration from config.lua
+-- Load the game-specific configuration from config.lua if available, otherwise use defaults
 function loadConfig(game_id)
-    local config = dofile("config.lua")
-    if config and config[game_id] then
-        return config[game_id]
+    local configFile = "config.lua"
+    local config = {}
+
+    -- Try loading config from config.lua
+    local file = io.open(configFile, "r")
+    if file then
+        file:close()
+        local status, result = pcall(dofile, configFile) -- Add pcall for error handling
+        if status then
+            config = result
+            print("Config loaded from config.lua")
+        else
+            print("Error loading config.lua: " .. result)
+        end
     else
-        print("Error: Invalid game ID or missing configuration.")
-        return nil
+        print("Warning: config.lua file not found. Using default configuration.")
     end
+
+    -- Fallback to default config if none is found for the game_id
+    config[game_id] = config[game_id] or {
+        memory_patterns = {
+            ue5_pattern = "default_ue5_pattern",
+            ue4_pattern = "default_ue4_pattern"
+        }
+    }
+
+    return config[game_id]
 end
 
 -- Function to select game configuration
@@ -28,15 +48,21 @@ function checkProcessAttached()
     return true
 end
 
+-- Function to scan a pattern with description and return result
+function scanPattern(pattern, description)
+    local scanResult = AOBScan(pattern, "*W")
+    if scanResult then
+        print(description .. " detected.")
+        return true
+    end
+    return false
+end
+
 -- Function to detect Unreal Engine version dynamically based on configuration
 function ueDetermineVersion(config)
-    local ue5_pattern = config.memory_patterns.ue5_pattern
-    local ue4_pattern = config.memory_patterns.ue4_pattern
-
-    -- Scan for UE5-specific pattern
-    if AOBScan(ue5_pattern, "*W") then
+    if scanPattern(config.memory_patterns.ue5_pattern, "UE5") then
         return 50  -- Return 50 for UE5
-    elseif AOBScan(ue4_pattern, "*W") then
+    elseif scanPattern(config.memory_patterns.ue4_pattern, "UE4.25+") then
         return 25  -- Return 25 for UE4.25+
     else
         return 22  -- Fallback for older versions of UE4 (4.22 and below)
@@ -63,92 +89,119 @@ function safeReadInteger(address)
     end
 end
 
--- Function to get user input for X, Y, Z coordinates
-function getPlayerCoordinates()
-    local x = inputQuery("Enter Player X Coordinate", "X:", "0.0")
-    local y = inputQuery("Enter Player Y Coordinate", "Y:", "0.0")
-    local z = inputQuery("Enter Player Z Coordinate", "Z:", "0.0")
-
-    -- Ensure inputs are converted to float values
-    return tonumber(x), tonumber(y), tonumber(z)
-end
-
--- Function to log extracted data to a file
-function logToFile(logData)
-    local logFile = io.open("player_data_log.txt", "a")
-    if logFile then
-        logFile:write(logData .. "\n")
-        logFile:close()
+-- Helper function to verify that the coordinates are within a reasonable range
+function verifyCoordinates(posX, posY, posZ)
+    local validRange = 10000 -- Example of a reasonable range for game coordinates
+    if not posX or not posY or not posZ then
+        print("Error: One or more coordinates are invalid.")
+        return false
+    end
+    if math.abs(posX) < validRange and math.abs(posY) < validRange and math.abs(posZ) < validRange then
+        return true
     else
-        print("Error: Could not open log file.")
+        print("Coordinates out of valid range. Found: X=" .. posX .. ", Y=" .. posY .. ", Z=" .. posZ)
+        return false
     end
 end
 
--- Function to dissect structure and extract player data based on dynamic configuration
-function dissectStructureAtAddress(address, config)
+-- Function to read floating-point values at addresses with validation
+local function readEntityValues(address)
     if not address or address == 0 then
-        print("Error: Invalid address for dissection.")
+        print("Error: Invalid entity address.")
         return
     end
 
-    local offsets = config.offsets
+    local posX = readFloat(address)
+    local posY = readFloat(address + 0x4)
+    local posZ = readFloat(address + 0x8)
+    local health = readFloat(address + 0xC)
 
-    -- Create a structure dissection object in Cheat Engine
-    local dissectionResult = createStructureDissectData()
-    dissectionResult.dissect(address)
-
-    if dissectionResult then
-        print("Dissected structure at address: " .. address)
-
-        -- Use safe read functions to avoid errors when accessing invalid memory
-        local positionX = safeReadFloat(address + offsets.position)
-        local health = safeReadFloat(address + offsets.health)
-        local inventory = safeReadInteger(address + offsets.inventory)
-
-        if positionX and health and inventory then
-            print(string.format("Position: X=%f", positionX))
-            print("Health: " .. health)
-            print("Inventory Item ID: " .. inventory)
-
-            -- Log to file
-            local logData = string.format("Position: X=%f, Health: %f, Inventory: %d", positionX, health, inventory)
-            logToFile(logData)
-        else
-            print("Error: Failed to read one or more attributes.")
-        end
+    -- Validate the coordinates
+    if verifyCoordinates(posX, posY, posZ) then
+        print("Entity at Address: " .. string.format("0x%X", address))
+        print("Position X: " .. posX)
+        print("Position Y: " .. posY)
+        print("Position Z: " .. posZ)
+        print("Health: " .. health)
     else
-        print("Error: Failed to dissect structure at address: " .. address)
+        print("Invalid entity coordinates, skipping...")
     end
 end
 
--- Main function to execute the script
-function main()
-    -- Step 1: Select game configuration dynamically
-    local config = selectGameConfig()
-    if not config then return end
+-- Function to scan and dissect memory dynamically using pointer paths
+function scanAndDissect()
+    local x, y, z = promptForCoordinates()
+    local baseAddress = heuristicScanForCoordinates(x, y, z)
 
-    -- Step 2: Check if a process is attached
-    if not checkProcessAttached() then return end
+    if baseAddress then
+        print("Base address found: " .. string.format("0x%X", baseAddress))
 
-    -- Step 3: Detect Unreal Engine version dynamically based on config
-    local engineVersion = ueDetermineVersion(config)
-    print("Detected Unreal Engine version: " .. engineVersion)
+        -- Read the entity values at the dynamic address
+        readEntityValues(baseAddress)
+    else
+        print("Failed to find a valid base address.")
+    end
+end
 
-    -- Step 4: Get user input for player coordinates
-    local x, y, z = getPlayerCoordinates()
-    print("Scanning for player coordinates: X=" .. x .. ", Y=" .. y .. ", Z=" .. z)
+-- Function to dissect a memory structure starting from a base address
+function dissectStructure(baseAddress, size, stepSize)
+    stepSize = stepSize or 4 -- Default to 4-byte step for float values
+    local currentAddress = baseAddress
+    local endAddress = baseAddress + size
+    local offset = 0
 
-    -- Step 5: Perform a heuristic memory scan for the coordinates (could implement batched scanning if needed)
-    -- Assume batchedMemoryScan is already implemented if needed
-    local coordinateAddresses = scanForCoordinates(x, y, z)
-    if not coordinateAddresses.x or not coordinateAddresses.y or not coordinateAddresses.z then
-        print("Error: Failed to find one or more coordinate addresses.")
+    print("Dissecting structure at base address: " .. string.format("0x%X", baseAddress))
+
+    while currentAddress < endAddress do
+        local value = readFloat(currentAddress)
+
+        -- Guess the type or label based on certain criteria (e.g., position, health, etc.)
+        if offset == 0 then
+            print("Offset " .. offset .. " (X Coordinate): " .. value)
+        elseif offset == 4 then
+            print("Offset " .. offset .. " (Y Coordinate): " .. value)
+        elseif offset == 8 then
+            print("Offset " .. offset .. " (Z Coordinate): " .. value)
+        elseif offset == 12 then
+            print("Offset " .. offset .. " (Health): " .. value)
+        else
+            print("Offset " .. offset .. ": " .. value)
+        end
+
+        currentAddress = currentAddress + stepSize
+        offset = offset + stepSize
+    end
+end
+
+-- Logging feature: Log entity values to a file for analysis
+function logEntityValues(address, filename)
+    local file, err = io.open(filename, "a+")
+    if not file then
+        print("Error opening file: " .. filename .. " - " .. err)
         return
     end
 
-    -- Step 6: Dissect the structure at the found X coordinate address (using dynamic offsets)
-    dissectStructureAtAddress(coordinateAddresses.x, config)
+    local posX = readFloat(address)
+    local posY = readFloat(address + 0x4)
+    local posZ = readFloat(address + 0x8)
+    local health = readFloat(address + 0xC)
+
+    file:write("Entity Address: " .. string.format("0x%X", address) .. "\n")
+    file:write("Position X: " .. posX .. "\n")
+    file:write("Position Y: " .. posY .. "\n")
+    file:write("Position Z: " .. posZ .. "\n")
+    file:write("Health: " .. health .. "\n")
+    file:write("--------------------------------------------\n")
+    file:close()
+    print("Entity values logged to " .. filename)
 end
 
--- Execute the main function
-main()
+-- Call to scan and dissect entities dynamically using pointer paths
+scanAndDissect()
+
+-- Example call: Start dissection at the entity's base address and dissect 64 bytes (size can be adjusted)
+-- Uncomment the following line to use it as needed
+-- dissectStructure(0x10000000, 64) -- Replace 0x10000000 with the actual base address
+
+-- Example of logging:
+-- logEntityValues(0x10000000, "entity_log.txt") -- Replace with actual base address
