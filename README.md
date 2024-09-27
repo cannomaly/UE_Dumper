@@ -1,4 +1,4 @@
-# -- Unreal Engine Debugger Script for Cheat Engine --
+# -- Unreal Engine Dumper Script for Cheat Engine --
 This project provides a Lua script for dynamically scanning, dissecting, and extracting player data from a game's memory using Cheat Engine. It supports games built with both Unreal Engine 4 and Unreal Engine 5.
 
 ## Features
