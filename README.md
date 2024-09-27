@@ -33,7 +33,7 @@ git clone https://github.com/cannomaly/UE_Debugger.git
    - Download Cheat Engine from the [official website](https://www.cheatengine.org/).
    - Install it on your system by following the provided installation instructions.
 
-### Step 2: Configure Your Games
+### Step 2: Configure Your Games (optional)
 
 To configure the script for specific games, modify the `config.lua` file available in your repository. This file contains game-specific memory offsets and Unreal Engine detection patterns.
 
