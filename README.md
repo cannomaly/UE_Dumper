@@ -1,13 +1,15 @@
 # -- Unreal Engine Debugger Script for Cheat Engine --
-This project provides a Lua script for dynamically scanning, dissecting, and extracting player data from a game's memory using Cheat Engine. It supports games built with both 
+This project provides a Lua script for dynamically scanning, dissecting, and extracting player data from a game's memory using Cheat Engine. It supports games built with both Unreal Engine 4 and Unreal Engine 5.
 
 ## Features
 
 - **Process Attachment Check**: Ensures that Cheat Engine is attached to the target process before scanning memory.
 - **Dynamic Game Configuration**: Easily switch between multiple games using a configuration file (`config.lua`) with game-specific memory offsets and patterns.
 - **Unreal Engine Version Detection**: Automatically detects whether the game uses UE4 or UE5 based on memory pattern scanning.
+- **Pattern Scanning Modularization**: Flexible pattern scanning for both Unreal Engine 4 and Unreal Engine 5 memory patterns through modular functions.
 - **Heuristic Memory Scan**: Scans the game's memory for player coordinates (X, Y, Z).
 - **Memory Dissection**: Extracts player data such as position, health, velocity, inventory, status effects, equipment, cooldowns, mana, and stamina.
+- **Configurable Memory Dissection**: Allows custom dissection step size for memory structures, increasing flexibility.
 - **Batched Memory Scanning**: Efficiently scans large memory spaces using batch processing for better performance.
 - **Error Handling and Safe Reads**: Safely reads memory addresses and handles invalid or inaccessible memory locations.
 - **Logging**: Extracted player data is logged to a file (`player_data_log.txt`) for later review.
