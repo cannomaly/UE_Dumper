@@ -6,13 +6,15 @@ This project provides a Lua script for dynamically scanning, dissecting, and ext
 - **Process Attachment Check**: Ensures that Cheat Engine is attached to the target process before scanning memory.
 - **Dynamic Game Configuration**: Easily switch between multiple games using a configuration file (`config.lua`) with game-specific memory offsets and patterns.
 - **Unreal Engine Version Detection**: Automatically detects whether the game uses UE4 or UE5 based on memory pattern scanning.
-- **Pattern Scanning Modularization**: Flexible pattern scanning for both Unreal Engine 4 and Unreal Engine 5 memory patterns through modular functions.
+- **Pattern Scan Caching**: Cached pattern scanning results to avoid redundant scans, improving performance in repeated scans.
 - **Heuristic Memory Scan**: Scans the game's memory for player coordinates (X, Y, Z).
+- **Threaded Memory Scanning**: Utilizes Lua's `coroutine` to allow non-blocking memory scans for large memory spaces.
 - **Memory Dissection**: Extracts player data such as position, health, velocity, inventory, status effects, equipment, cooldowns, mana, and stamina.
-- **Configurable Memory Dissection**: Allows custom dissection step size for memory structures, increasing flexibility.
+- **Configurable Memory Dissection**: Allows customizable step size for dissection, making it adaptable to various memory structures.
 - **Batched Memory Scanning**: Efficiently scans large memory spaces using batch processing for better performance.
-- **Error Handling and Safe Reads**: Safely reads memory addresses and handles invalid or inaccessible memory locations.
-- **Logging**: Extracted player data is logged to a file (`player_data_log.txt`) for later review.
+- **Custom Exception Handling**: Safely reads memory addresses using custom exception handling with `pcall`, preventing crashes from invalid or inaccessible memory locations.
+- **Memory Scan Progress Bar**: Displays a progress bar in the console during large memory scans, providing real-time feedback on the scan's progress.
+- **Logging with Automatic Backup**: Extracted player data is logged to a file (`player_data_log.txt`), with automatic backup of previous logs before they are overwritten.
 
 ## Prerequisites
 
@@ -26,7 +28,7 @@ This project provides a Lua script for dynamically scanning, dissecting, and ext
 1. Clone this repository to your local machine by downloading or pulling it from your GitHub repository.
 
 ```bash
-git clone https://github.com/cannomaly/UE_Debugger.git
+git clone https://github.com/cannomaly/UE_Dumper.git
 ```
 2. Install Cheat Engine:
 
