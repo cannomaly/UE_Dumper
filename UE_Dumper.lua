@@ -48,45 +48,51 @@ function checkProcessAttached()
     return true
 end
 
--- Function to scan a pattern with description and return result
-function scanPattern(pattern, description)
-    local scanResult = AOBScan(pattern, "*W")
-    if scanResult then
-        print(description .. " detected.")
-        return true
+-- Pattern scan caching mechanism to avoid redundant scans
+local scanCache = {}
+
+function cacheScan(pattern, description)
+    if scanCache[pattern] then
+        print(description .. " already cached.")
+        return scanCache[pattern]
+    else
+        local result = AOBScan(pattern, "*W")
+        if result then
+            scanCache[pattern] = result
+            return result
+        end
     end
-    return false
+    return nil
 end
 
 -- Function to detect Unreal Engine version dynamically based on configuration
 function ueDetermineVersion(config)
-    if scanPattern(config.memory_patterns.ue5_pattern, "UE5") then
+    if cacheScan(config.memory_patterns.ue5_pattern, "UE5") then
         return 50  -- Return 50 for UE5
-    elseif scanPattern(config.memory_patterns.ue4_pattern, "UE4.25+") then
+    elseif cacheScan(config.memory_patterns.ue4_pattern, "UE4.25+") then
         return 25  -- Return 25 for UE4.25+
     else
         return 22  -- Fallback for older versions of UE4 (4.22 and below)
     end
 end
 
--- Function to safely read float values with error handling
-function safeReadFloat(address)
-    if address and address ~= 0 then
-        return readFloat(address)
-    else
-        print("Error: Invalid memory address.")
+-- Custom exception handling for memory read
+function tryReadFloat(address)
+    local status, result = pcall(function() return readFloat(address) end)
+    if not status then
+        print("Error reading float at address: " .. string.format("0x%X", address))
         return nil
     end
+    return result
 end
 
--- Function to safely read integer values with error handling
-function safeReadInteger(address)
-    if address and address ~= 0 then
-        return readInteger(address)
-    else
-        print("Error: Invalid memory address.")
+function tryReadInteger(address)
+    local status, result = pcall(function() return readInteger(address) end)
+    if not status then
+        print("Error reading integer at address: " .. string.format("0x%X", address))
         return nil
     end
+    return result
 end
 
 -- Helper function to verify that the coordinates are within a reasonable range
@@ -111,10 +117,10 @@ local function readEntityValues(address)
         return
     end
 
-    local posX = readFloat(address)
-    local posY = readFloat(address + 0x4)
-    local posZ = readFloat(address + 0x8)
-    local health = readFloat(address + 0xC)
+    local posX = tryReadFloat(address)
+    local posY = tryReadFloat(address + 0x4)
+    local posZ = tryReadFloat(address + 0x8)
+    local health = tryReadFloat(address + 0xC)
 
     -- Validate the coordinates
     if verifyCoordinates(posX, posY, posZ) then
@@ -128,24 +134,45 @@ local function readEntityValues(address)
     end
 end
 
+-- Memory scan progress bar
+function showProgress(current, total)
+    local percent = math.floor((current / total) * 100)
+    io.write("\rProgress: [" .. string.rep("=", percent // 2) .. string.rep(" ", 50 - percent // 2) .. "] " .. percent .. "%")
+    io.flush()
+end
+
 -- Function to scan and dissect memory dynamically using pointer paths
 function scanAndDissect()
     local x, y, z = promptForCoordinates()
     local baseAddress = heuristicScanForCoordinates(x, y, z)
+    local totalAddresses = 100000  -- Example total for progress tracking (adjust based on actual usage)
 
     if baseAddress then
         print("Base address found: " .. string.format("0x%X", baseAddress))
 
         -- Read the entity values at the dynamic address
-        readEntityValues(baseAddress)
+        local co = coroutine.create(function ()
+            for i = 1, totalAddresses do
+                -- Simulate memory scan
+                coroutine.yield(i)
+                showProgress(i, totalAddresses)
+            end
+            readEntityValues(baseAddress)
+        end)
+
+        -- Resume coroutine in chunks
+        while coroutine.status(co) ~= "dead" do
+            local status, result = coroutine.resume(co)
+            -- Handle progress here, e.g., show progress every step
+        end
     else
         print("Failed to find a valid base address.")
     end
 end
 
--- Function to dissect a memory structure starting from a base address
+-- Function to dissect a memory structure starting from a base address with configurable step size
 function dissectStructure(baseAddress, size, stepSize)
-    stepSize = stepSize or 4 -- Default to 4-byte step for float values
+    stepSize = stepSize or 4 -- Default to 4-byte step for floats
     local currentAddress = baseAddress
     local endAddress = baseAddress + size
     local offset = 0
@@ -153,38 +180,40 @@ function dissectStructure(baseAddress, size, stepSize)
     print("Dissecting structure at base address: " .. string.format("0x%X", baseAddress))
 
     while currentAddress < endAddress do
-        local value = readFloat(currentAddress)
-
-        -- Guess the type or label based on certain criteria (e.g., position, health, etc.)
-        if offset == 0 then
-            print("Offset " .. offset .. " (X Coordinate): " .. value)
-        elseif offset == 4 then
-            print("Offset " .. offset .. " (Y Coordinate): " .. value)
-        elseif offset == 8 then
-            print("Offset " .. offset .. " (Z Coordinate): " .. value)
-        elseif offset == 12 then
-            print("Offset " .. offset .. " (Health): " .. value)
-        else
-            print("Offset " .. offset .. ": " .. value)
+        local value
+        if stepSize == 4 then
+            value = tryReadFloat(currentAddress)
+        elseif stepSize == 8 then
+            value = tryReadInteger(currentAddress)  -- For 8-byte integers
         end
-
+        print("Offset " .. offset .. ": " .. value)
         currentAddress = currentAddress + stepSize
         offset = offset + stepSize
     end
 end
 
--- Logging feature: Log entity values to a file for analysis
+-- Logging feature: Log entity values to a file for analysis with automatic backup
+function backupLog(filename)
+    local file = io.open(filename, "r")
+    if file then
+        file:close()
+        os.rename(filename, filename .. ".bak")
+    end
+end
+
 function logEntityValues(address, filename)
+    backupLog(filename)
+
     local file, err = io.open(filename, "a+")
     if not file then
         print("Error opening file: " .. filename .. " - " .. err)
         return
     end
 
-    local posX = readFloat(address)
-    local posY = readFloat(address + 0x4)
-    local posZ = readFloat(address + 0x8)
-    local health = readFloat(address + 0xC)
+    local posX = tryReadFloat(address)
+    local posY = tryReadFloat(address + 0x4)
+    local posZ = tryReadFloat(address + 0x8)
+    local health = tryReadFloat(address + 0xC)
 
     file:write("Entity Address: " .. string.format("0x%X", address) .. "\n")
     file:write("Position X: " .. posX .. "\n")
@@ -201,7 +230,7 @@ scanAndDissect()
 
 -- Example call: Start dissection at the entity's base address and dissect 64 bytes (size can be adjusted)
 -- Uncomment the following line to use it as needed
--- dissectStructure(0x10000000, 64) -- Replace 0x10000000 with the actual base address
+-- dissectStructure(0x10000000, 64, 4) -- Replace 0x10000000 with the actual base address, stepSize configurable
 
 -- Example of logging:
--- logEntityValues(0x10000000, "entity_log.txt") -- Replace with actual base address
+-- logEntityValues(0x10000000
